@@ -14,6 +14,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   dns_prefix          = var.aks_name
+  oidc_issuer_enabled = true        
 
   default_node_pool {
     name       = "default"
@@ -51,5 +52,4 @@ resource "azurerm_role_assignment" "aks_acr_pull" {
   role_definition_name             = "AcrPull"
   scope                            = azurerm_container_registry.acr.id
   skip_service_principal_aad_check = true
-  oidc_issuer_enabled = true
 }

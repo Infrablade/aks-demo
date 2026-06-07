@@ -1,3 +1,5 @@
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_resource_group" "main" {
   name     = var.resource_group_name
   location = var.location
@@ -9,36 +11,15 @@ resource "azurerm_resource_group" "main" {
   }
 }
 
-resource "azurerm_kubernetes_cluster" "aks" {
+# ── Module: AKS ───────────────────────────────────────────────
+module "aks" {
+  source = "./modules/aks-cluster"
+
   name                = var.aks_name
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  dns_prefix          = var.aks_name
-  oidc_issuer_enabled = true        
-
-  default_node_pool {
-    name       = "default"
-    node_count = var.node_count
-    vm_size    = var.node_vm_size
-  }
-
-  identity {
-    type = "SystemAssigned"
-  }
-
-  tags = {
-    env     = "demo"
-    team    = "platform"
-    project = "aks-demo"
-  }
-}
-
-resource "azurerm_container_registry" "acr" {
-  name                = var.acr_name
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
-  sku                 = "Basic"
-  admin_enabled       = false
+  node_count          = var.node_count
+  node_vm_size        = var.node_vm_size
 
   tags = {
     env     = "demo"
@@ -47,22 +28,14 @@ resource "azurerm_container_registry" "acr" {
   }
 }
 
-resource "azurerm_role_assignment" "aks_acr_pull" {
-  principal_id                     = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
-  role_definition_name             = "AcrPull"
-  scope                            = azurerm_container_registry.acr.id
-  skip_service_principal_aad_check = true
-}
+# ── Module: ACR ───────────────────────────────────────────────
+module "acr" {
+  source = "./modules/container-registry"
 
-data "azurerm_client_config" "current" {}
-
-resource "azurerm_key_vault" "kv" {
-  name                      = "kv-aks-demo-cap"
-  resource_group_name       = azurerm_resource_group.main.name
-  location                  = azurerm_resource_group.main.location
-  tenant_id                 = data.azurerm_client_config.current.tenant_id
-  sku_name                  = "standard"
-  enable_rbac_authorization = true
+  name                 = var.acr_name
+  resource_group_name  = azurerm_resource_group.main.name
+  location             = azurerm_resource_group.main.location
+  aks_kubelet_identity = module.aks.kubelet_identity
 
   tags = {
     env     = "demo"
@@ -71,25 +44,32 @@ resource "azurerm_key_vault" "kv" {
   }
 }
 
-# Gives the SP (Terraform) admin access to manage secrets
-resource "azurerm_role_assignment" "kv_admin" {
-  scope                = azurerm_key_vault.kv.id
-  role_definition_name = "Key Vault Administrator"
-  principal_id         = data.azurerm_client_config.current.object_id
+# ── Module: Key Vault ─────────────────────────────────────────
+module "key_vault" {
+  source = "./modules/key-vault"
+
+  name                = "kv-aks-demo-cap"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+  sp_object_id        = data.azurerm_client_config.current.object_id
+  user_object_id      = "8fa4e49e-2b62-4f81-8a19-d6764a7f9893"
+
+  tags = {
+    env     = "demo"
+    team    = "platform"
+    project = "aks-demo"
+  }
 }
 
-# Gives YOUR personal account admin access to see secrets in portal
-resource "azurerm_role_assignment" "kv_admin_user" {
-  scope                = azurerm_key_vault.kv.id
-  role_definition_name = "Key Vault Administrator"
-  principal_id         = "8fa4e49e-2b62-4f81-8a19-d6764a7f9893"
-}
+# ── Module: Service Bus ───────────────────────────────────────
+module "service_bus" {
+  source = "./modules/service-bus"
 
-resource "azurerm_servicebus_namespace" "sb" {
   name                = "sb-aks-demo-cap"
-  location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
-  sku                 = "Standard"
+  location            = azurerm_resource_group.main.location
+  topic_name          = "tax-code-updates"
 
   tags = {
     env     = "demo"
@@ -98,35 +78,14 @@ resource "azurerm_servicebus_namespace" "sb" {
   }
 }
 
-resource "azurerm_servicebus_topic" "tax_code_updates" {
-  name         = "tax-code-updates"
-  namespace_id = azurerm_servicebus_namespace.sb.id
-}
-
-resource "azurerm_servicebus_subscription" "db_subscriber" {
-  name               = "db-subscriber"
-  topic_id           = azurerm_servicebus_topic.tax_code_updates.id
-  max_delivery_count = 3
-}
-
-resource "azurerm_servicebus_subscription" "notification_sub" {
-  name               = "notification-sub"
-  topic_id           = azurerm_servicebus_topic.tax_code_updates.id
-  max_delivery_count = 3
-}
-
-data "azurerm_servicebus_namespace_authorization_rule" "sb_rule" {
-  name                = "RootManageSharedAccessKey"
-  namespace_id        = azurerm_servicebus_namespace.sb.id
-}
-
+# ── Service Bus connection string → Key Vault ─────────────────
 resource "azurerm_key_vault_secret" "sb_connection_string" {
   name         = "servicebus-connection-string"
-  value        = data.azurerm_servicebus_namespace_authorization_rule.sb_rule.primary_connection_string
-  key_vault_id = azurerm_key_vault.kv.id
+  value        = module.service_bus.primary_connection_string
+  key_vault_id = module.key_vault.id
 
   depends_on = [
-    azurerm_role_assignment.kv_admin
+    module.key_vault
   ]
 
   tags = {
@@ -136,7 +95,7 @@ resource "azurerm_key_vault_secret" "sb_connection_string" {
   }
 }
 
-# Policy 1 — Require tags on all resources
+# ── Azure Policy ──────────────────────────────────────────────
 resource "azurerm_resource_group_policy_assignment" "require_tags" {
   name                 = "require-tags"
   resource_group_id    = azurerm_resource_group.main.id
@@ -149,7 +108,6 @@ resource "azurerm_resource_group_policy_assignment" "require_tags" {
   })
 }
 
-# Policy 2 — Allowed VM sizes
 resource "azurerm_resource_group_policy_assignment" "allowed_vm_sizes" {
   name                 = "allowed-vm-sizes"
   resource_group_id    = azurerm_resource_group.main.id
@@ -167,15 +125,10 @@ resource "azurerm_resource_group_policy_assignment" "allowed_vm_sizes" {
   })
 }
 
-# ── PIM-style time-bound access ───────────────────────────────────────────────
-# NOTE: In a P2-licensed tenant this would use azurerm_pim_eligible_role_assignment
-# which adds: time-bound activation, approval workflow, MFA on activation,
-# justification required, and full audit log.
-# This implements the same least-privilege principle with a scoped role assignment.
-
+# ── PIM-style scoped access ───────────────────────────────────
 resource "azurerm_role_assignment" "sp_contributor_rg" {
   scope                = azurerm_resource_group.main.id
   role_definition_name = "Contributor"
   principal_id         = "f3b15a3e-a8de-4841-927d-d6c2bfe8202d"
-  description          = "Scoped contributor access for sp-tf-aks-demo. In P2 tenant this would be PIM eligible assignment with 8hr max activation."
+  description          = "Scoped contributor access for sp-tf-aks-demo. In P2 tenant this would be PIM eligible assignment."
 }

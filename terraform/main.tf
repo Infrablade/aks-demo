@@ -13,7 +13,8 @@ resource "azurerm_resource_group" "main" {
 
 # ── Module: AKS ───────────────────────────────────────────────
 module "aks" {
-  source = "./modules/aks-cluster"
+  source  = "app.terraform.io/InfraBlade/aks-cluster/azurerm"
+  version = "1.0.0"
 
   name                = var.aks_name
   resource_group_name = azurerm_resource_group.main.name
@@ -30,7 +31,8 @@ module "aks" {
 
 # ── Module: ACR ───────────────────────────────────────────────
 module "acr" {
-  source = "./modules/container-registry"
+  source  = "app.terraform.io/InfraBlade/container-registry/azurerm"
+  version = "1.0.0"
 
   name                 = var.acr_name
   resource_group_name  = azurerm_resource_group.main.name
@@ -46,7 +48,8 @@ module "acr" {
 
 # ── Module: Key Vault ─────────────────────────────────────────
 module "key_vault" {
-  source = "./modules/key-vault"
+  source  = "app.terraform.io/InfraBlade/key-vault/azurerm"
+  version = "1.0.0"
 
   name                = "kv-aks-demo-cap"
   resource_group_name = azurerm_resource_group.main.name
@@ -64,7 +67,8 @@ module "key_vault" {
 
 # ── Module: Service Bus ───────────────────────────────────────
 module "service_bus" {
-  source = "./modules/service-bus"
+  source  = "app.terraform.io/InfraBlade/service-bus/azurerm"
+  version = "1.0.0"
 
   name                = "sb-aks-demo-cap"
   resource_group_name = azurerm_resource_group.main.name

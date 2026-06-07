@@ -51,3 +51,15 @@ def test_messages_endpoint(client):
     assert response.status_code == 200
     data = response.get_json()
     assert "total_messages" in data
+
+def test_calculate_tax_includes_ni(client):
+    response = client.post("/calculate-tax",
+        json={"salary": 50000},
+        content_type="application/json"
+    )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "national_insurance" in data
+    assert "total_deductions" in data
+    assert "effective_tax_rate" in data
+    assert data["national_insurance"] > 0

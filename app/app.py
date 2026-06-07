@@ -1,6 +1,5 @@
 from flask import Flask, jsonify, request
 import os
-import json
 import datetime
 
 app = Flask(__name__)
@@ -8,11 +7,26 @@ app = Flask(__name__)
 # Simulated message queue (represents Service Bus in real world)
 message_log = []
 
+def calculate_ni(salary):
+    """Simple UK National Insurance calculation"""
+    ni_primary_threshold = 12570
+    ni_upper_earnings = 50270
+
+    if salary <= ni_primary_threshold:
+        ni = 0
+    elif salary <= ni_upper_earnings:
+        ni = (salary - ni_primary_threshold) * 0.08
+    else:
+        ni = (ni_upper_earnings - ni_primary_threshold) * 0.08
+        ni += (salary - ni_upper_earnings) * 0.02
+
+    return round(ni, 2)
+
 def calculate_tax(salary):
-    """Simple UK tax calculation simulation"""
+    """Simple UK income tax calculation"""
     personal_allowance = 12570
     basic_rate_limit = 50270
-    
+
     if salary <= personal_allowance:
         tax = 0
     elif salary <= basic_rate_limit:
@@ -20,7 +34,7 @@ def calculate_tax(salary):
     else:
         tax = (basic_rate_limit - personal_allowance) * 0.20
         tax += (salary - basic_rate_limit) * 0.40
-    
+
     return round(tax, 2)
 
 @app.route("/")
@@ -55,7 +69,9 @@ def calculate_tax_endpoint():
 
     salary = data["salary"]
     tax = calculate_tax(salary)
-    take_home = salary - tax
+    ni = calculate_ni(salary)
+    total_deductions = round(tax + ni, 2)
+    take_home = round(salary - total_deductions, 2)
 
     # Simulate publishing to Service Bus
     message = {
@@ -63,17 +79,22 @@ def calculate_tax_endpoint():
         "timestamp": datetime.datetime.utcnow().isoformat(),
         "payload": {
             "salary": salary,
-            "tax": tax,
+            "income_tax": tax,
+            "national_insurance": ni,
+            "total_deductions": total_deductions,
             "take_home": take_home,
-            "tax_rate": round((tax / salary * 100), 2) if salary > 0 else 0
+            "effective_tax_rate": round((total_deductions / salary * 100), 2) if salary > 0 else 0
         }
     }
     message_log.append(message)
 
     return jsonify({
         "salary": salary,
-        "tax": tax,
+        "income_tax": tax,
+        "national_insurance": ni,
+        "total_deductions": total_deductions,
         "take_home": take_home,
+        "effective_tax_rate": round((total_deductions / salary * 100), 2) if salary > 0 else 0,
         "message": "calculation complete — event published to Service Bus"
     }), 200
 

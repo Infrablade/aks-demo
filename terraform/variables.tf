@@ -13,7 +13,7 @@ variable "location" {
 variable "acr_name" {
   description = "Container registry name (globally unique, alphanumeric only)"
   type        = string
-  default     = "acraksdemo"
+  default     = "acraksdemocap"
 }
 
 variable "aks_name" {

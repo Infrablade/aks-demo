@@ -84,3 +84,33 @@ resource "azurerm_role_assignment" "kv_admin_user" {
   role_definition_name = "Key Vault Administrator"
   principal_id         = "8fa4e49e-2b62-4f81-8a19-d6764a7f9893"
 }
+
+resource "azurerm_servicebus_namespace" "sb" {
+  name                = "sb-aks-demo-cap"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  sku                 = "Standard"
+
+  tags = {
+    env     = "demo"
+    team    = "platform"
+    project = "aks-demo"
+  }
+}
+
+resource "azurerm_servicebus_topic" "tax_code_updates" {
+  name         = "tax-code-updates"
+  namespace_id = azurerm_servicebus_namespace.sb.id
+}
+
+resource "azurerm_servicebus_subscription" "db_subscriber" {
+  name               = "db-subscriber"
+  topic_id           = azurerm_servicebus_topic.tax_code_updates.id
+  max_delivery_count = 3
+}
+
+resource "azurerm_servicebus_subscription" "notification_sub" {
+  name               = "notification-sub"
+  topic_id           = azurerm_servicebus_topic.tax_code_updates.id
+  max_delivery_count = 3
+}

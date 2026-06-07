@@ -166,3 +166,16 @@ resource "azurerm_resource_group_policy_assignment" "allowed_vm_sizes" {
     }
   })
 }
+
+# ── PIM-style time-bound access ───────────────────────────────────────────────
+# NOTE: In a P2-licensed tenant this would use azurerm_pim_eligible_role_assignment
+# which adds: time-bound activation, approval workflow, MFA on activation,
+# justification required, and full audit log.
+# This implements the same least-privilege principle with a scoped role assignment.
+
+resource "azurerm_role_assignment" "sp_contributor_rg" {
+  scope                = azurerm_resource_group.main.id
+  role_definition_name = "Contributor"
+  principal_id         = "f3b15a3e-a8de-4841-927d-d6c2bfe8202d"
+  description          = "Scoped contributor access for sp-tf-aks-demo. In P2 tenant this would be PIM eligible assignment with 8hr max activation."
+}

@@ -1,0 +1,164 @@
+name: Build, Test & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  ACR_NAME: acraksdemocap.azurecr.io
+  IMAGE_NAME: demo-app
+  AKS_NAME: aks-demo
+  RESOURCE_GROUP: rg-aks-demo
+
+jobs:
+  # ── 1. Unit Tests ────────────────────────────────────────────
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt
+
+      - name: Run unit tests
+        run: |
+          cd app
+          pytest tests/test_app.py -v --cov=. --cov-report=term-missing
+
+  # ── 2. Build & Push ──────────────────────────────────────────
+  build-push:
+    name: Build & Push to ACR
+    runs-on: ubuntu-latest
+    needs: unit-test
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      id-token: write
+      contents: read
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Generate image tag
+        id: meta
+        run: echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Build & push to ACR
+        run: |
+          az acr build \
+            --registry acraksdemocap \
+            --image ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }} \
+            --image ${{ env.IMAGE_NAME }}:latest \
+            ./app
+
+  # ── 3. Trivy Scan ────────────────────────────────────────────
+  scan:
+    name: Trivy Image Scan
+    runs-on: ubuntu-latest
+    needs: build-push
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Pull image for scanning
+        run: |
+          az acr login --name acraksdemocap
+          docker pull ${{ env.ACR_NAME }}/${{ env.IMAGE_NAME }}:${{ needs.build-push.outputs.image_tag }}
+
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.ACR_NAME }}/${{ env.IMAGE_NAME }}:${{ needs.build-push.outputs.image_tag }}"
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+
+  # ── 4. Deploy ────────────────────────────────────────────────
+  deploy:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+    needs: [build-push, scan]
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.AKS_NAME }}
+
+      - name: Update image tag
+        run: |
+          sed -i "s|:latest|:${{ needs.build-push.outputs.image_tag }}|g" k8s/deployment.yaml
+
+      - name: Deploy to AKS
+        run: kubectl apply -f k8s/
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/demo-app --timeout=120s
+
+      - name: Get service IP
+        id: get-ip
+        run: |
+          echo "Waiting for LoadBalancer IP..."
+          for i in {1..20}; do
+            IP=$(kubectl get svc demo-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            if [ -n "$IP" ]; then
+              echo "ip=$IP" >> $GITHUB_OUTPUT
+              echo "App IP: $IP"
+              break
+            fi
+            sleep 10
+          done
+
+      - name: Set up Python for smoke tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Run smoke tests
+        run: |
+          python app/tests/smoke_test.py http://${{ steps.get-ip.outputs.ip }}

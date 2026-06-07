@@ -8,13 +8,13 @@ terraform {
     }
   }
 
-  cloud {
-    organization = "InfraBlade"
+  # cloud {
+  #   organization = "InfraBlade"
 
-    workspaces {
-      name = "aks-demo"
-    }
-  }
+  #   workspaces {
+  #     name = "aks-demo"
+  #   }
+  # }
 }
 
 provider "azurerm" {

@@ -55,7 +55,7 @@ module "key_vault" {
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   tenant_id           = data.azurerm_client_config.current.tenant_id
-  sp_object_id        = data.azurerm_client_config.current.object_id
+  sp_object_id        = "f3b15a3e-a8de-4841-927d-d6c2bfe8202d"
   user_object_id      = "8fa4e49e-2b62-4f81-8a19-d6764a7f9893"
 
   tags = {
@@ -134,5 +134,5 @@ resource "azurerm_role_assignment" "sp_contributor_rg" {
   scope                = azurerm_resource_group.main.id
   role_definition_name = "Contributor"
   principal_id         = "f3b15a3e-a8de-4841-927d-d6c2bfe8202d"
-  description          = "Scoped contributor access for sp-tf-aks-demo. In P2 tenant this would be PIM eligible assignment."
+  description          = "Scoped contributor access for sp-tf-aks-demo. In P2 tenant this would be PIM eligible assignment with 8hr max activation."
 }

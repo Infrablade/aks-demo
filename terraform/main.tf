@@ -135,3 +135,34 @@ resource "azurerm_key_vault_secret" "sb_connection_string" {
     project = "aks-demo"
   }
 }
+
+# Policy 1 — Require tags on all resources
+resource "azurerm_resource_group_policy_assignment" "require_tags" {
+  name                 = "require-tags"
+  resource_group_id    = azurerm_resource_group.main.id
+  policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/96670d01-0a4d-4649-9c89-2d3abc0a5025"
+
+  parameters = jsonencode({
+    tagName = {
+      value = "env"
+    }
+  })
+}
+
+# Policy 2 — Allowed VM sizes
+resource "azurerm_resource_group_policy_assignment" "allowed_vm_sizes" {
+  name                 = "allowed-vm-sizes"
+  resource_group_id    = azurerm_resource_group.main.id
+  policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/cccc23c7-8427-4f53-ad12-b6a63eb452b3"
+
+  parameters = jsonencode({
+    listOfAllowedSKUs = {
+      value = [
+        "Standard_B2s",
+        "Standard_B4ms",
+        "Standard_D2s_v5",
+        "Standard_D4s_v5"
+      ]
+    }
+  })
+}

@@ -1,0 +1,9 @@
+# Ignoring unfixed OS-level CVEs with no available fix
+# Status: fix_deferred / affected - no fixed version available
+# Reviewed: 2026-06-07
+CVE-2025-69720
+CVE-2026-42496
+CVE-2026-8376
+CVE-2026-42497
+CVE-2026-48962
+CVE-2026-9538

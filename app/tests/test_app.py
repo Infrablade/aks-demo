@@ -36,7 +36,7 @@ def test_calculate_tax_valid(client):
     )
     assert response.status_code == 200
     data = response.get_json()
-    assert "tax" in data
+    assert "income_tax" in data
     assert "take_home" in data
 
 def test_calculate_tax_missing_salary(client):

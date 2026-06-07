@@ -114,3 +114,24 @@ resource "azurerm_servicebus_subscription" "notification_sub" {
   topic_id           = azurerm_servicebus_topic.tax_code_updates.id
   max_delivery_count = 3
 }
+
+data "azurerm_servicebus_namespace_authorization_rule" "sb_rule" {
+  name                = "RootManageSharedAccessKey"
+  namespace_id        = azurerm_servicebus_namespace.sb.id
+}
+
+resource "azurerm_key_vault_secret" "sb_connection_string" {
+  name         = "servicebus-connection-string"
+  value        = data.azurerm_servicebus_namespace_authorization_rule.sb_rule.primary_connection_string
+  key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [
+    azurerm_role_assignment.kv_admin
+  ]
+
+  tags = {
+    env     = "demo"
+    team    = "platform"
+    project = "aks-demo"
+  }
+}

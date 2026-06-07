@@ -80,6 +80,7 @@ jobs:
       contents: read
 
     steps:
+      - uses: actions/checkout@v4
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -99,7 +100,7 @@ jobs:
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
-          trivyignores: "app/.trivyignore"
+          trivyignores: "${{ github.workspace }}/app/.trivyignore"
 
   # ── 4. Deploy ────────────────────────────────────────────────
   deploy:

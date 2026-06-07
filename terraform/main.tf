@@ -53,3 +53,34 @@ resource "azurerm_role_assignment" "aks_acr_pull" {
   scope                            = azurerm_container_registry.acr.id
   skip_service_principal_aad_check = true
 }
+
+data "azurerm_client_config" "current" {}
+
+resource "azurerm_key_vault" "kv" {
+  name                      = "kv-aks-demo-cap"
+  resource_group_name       = azurerm_resource_group.main.name
+  location                  = azurerm_resource_group.main.location
+  tenant_id                 = data.azurerm_client_config.current.tenant_id
+  sku_name                  = "standard"
+  enable_rbac_authorization = true
+
+  tags = {
+    env     = "demo"
+    team    = "platform"
+    project = "aks-demo"
+  }
+}
+
+# Gives the SP (Terraform) admin access to manage secrets
+resource "azurerm_role_assignment" "kv_admin" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Administrator"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+# Gives YOUR personal account admin access to see secrets in portal
+resource "azurerm_role_assignment" "kv_admin_user" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Administrator"
+  principal_id         = "8fa4e49e-2b62-4f81-8a19-d6764a7f9893"
+}

@@ -205,7 +205,7 @@ jobs:
 
       - name: Update image tag
         run: |
-          sed -i "s|:latest|:${{ needs.build-push.outputs.image_tag }}|g" k8s/deployment.yaml
+          sed -i "s|acraksdemocap.azurecr.io/demo-app:.*|acraksdemocap.azurecr.io/demo-app:${{ needs.build-push.outputs.image_tag }}|g" k8s/deployment.yaml
 
       - name: Deploy to AKS
         run: kubectl apply -f k8s/
@@ -263,7 +263,7 @@ jobs:
 
       - name: Update image tag
         run: |
-          sed -i "s|:latest|:${{ needs.build-push.outputs.image_tag }}|g" k8s/deployment.yaml
+          sed -i "s|acraksdemocap.azurecr.io/demo-app:.*|acraksdemocap.azurecr.io/demo-app:${{ needs.build-push.outputs.image_tag }}|g" k8s/deployment.yaml
 
       - name: Deploy to AKS
         run: kubectl apply -f k8s/

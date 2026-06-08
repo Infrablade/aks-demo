@@ -33,20 +33,97 @@ jobs:
           cd app
           pytest tests/test_app.py -v --cov=. --cov-report=term-missing
 
-  # ── 2. Build & Push ──────────────────────────────────────────
-  build-push:
-    name: Build & Push to ACR
+  # ── 2. Checkov IaC Scan ──────────────────────────────────────
+  checkov:
+    name: Checkov IaC Scan
     runs-on: ubuntu-latest
-    needs: unit-test
-    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform/
+          framework: terraform
+          soft_fail: true
+          output_format: cli
+
+  # ── 3. Terraform Plan ────────────────────────────────────────
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.5"
+
+      - name: Configure Azure credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set ARM credentials for Terraform
+        run: |
+          echo "ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $GITHUB_ENV
+          echo "ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $GITHUB_ENV
+          echo "ARM_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> $GITHUB_ENV
+          echo "ARM_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> $GITHUB_ENV
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init \
+            -backend-config="resource_group_name=rg-tfstate" \
+            -backend-config="storage_account_name=sttfstateinfrablade" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=aks-demo.terraform.tfstate"
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN }}
+
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan -no-color 2>&1 | tee plan_output.txt
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN }}
+
+      - name: Post plan to PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('terraform/plan_output.txt', 'utf8');
+            const truncated = plan.length > 60000
+              ? plan.substring(0, 60000) + '\n... truncated'
+              : plan;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Terraform Plan\n\`\`\`\n${truncated}\n\`\`\``
+            });
+
+  # ── 4. Build & Push ──────────────────────────────────────────
+  build-push:
+    name: Build & Push to ACR
+    runs-on: ubuntu-latest
+    needs: [unit-test, checkov, terraform-plan]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       image_tag: ${{ steps.meta.outputs.tag }}
-
     steps:
       - uses: actions/checkout@v4
 
@@ -69,18 +146,17 @@ jobs:
             --image ${{ env.IMAGE_NAME }}:latest \
             ./app
 
-  # ── 3. Trivy Scan ────────────────────────────────────────────
+  # ── 5. Trivy Scan ────────────────────────────────────────────
   scan:
     name: Trivy Image Scan
     runs-on: ubuntu-latest
     needs: build-push
-
     permissions:
       id-token: write
       contents: read
-
     steps:
       - uses: actions/checkout@v4
+
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -102,16 +178,15 @@ jobs:
           severity: "CRITICAL,HIGH"
           trivyignores: "${{ github.workspace }}/app/.trivyignore"
 
-  # ── 4. Deploy ────────────────────────────────────────────────
-  deploy:
-    name: Deploy to AKS
+  # ── 6. Deploy to Dev ─────────────────────────────────────────
+  deploy-dev:
+    name: Deploy to Dev
     runs-on: ubuntu-latest
     needs: [build-push, scan]
-
+    environment: dev
     permissions:
       id-token: write
       contents: read
-
     steps:
       - uses: actions/checkout@v4
 
@@ -136,18 +211,15 @@ jobs:
         run: kubectl apply -f k8s/
 
       - name: Wait for rollout
-        run: |
-          kubectl rollout status deployment/demo-app --timeout=120s
+        run: kubectl rollout status deployment/demo-app --timeout=120s
 
       - name: Get service IP
         id: get-ip
         run: |
-          echo "Waiting for LoadBalancer IP..."
           for i in {1..20}; do
             IP=$(kubectl get svc demo-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
             if [ -n "$IP" ]; then
               echo "ip=$IP" >> $GITHUB_OUTPUT
-              echo "App IP: $IP"
               break
             fi
             sleep 10
@@ -162,5 +234,62 @@ jobs:
         run: pip install requests
 
       - name: Run smoke tests
+        run: python app/tests/smoke_test.py http://${{ steps.get-ip.outputs.ip }}
+
+  # ── 7. Deploy to Staging ─────────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    environment: staging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
         run: |
-          python app/tests/smoke_test.py http://${{ steps.get-ip.outputs.ip }}
+          az aks get-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.AKS_NAME }}
+
+      - name: Update image tag
+        run: |
+          sed -i "s|:latest|:${{ needs.build-push.outputs.image_tag }}|g" k8s/deployment.yaml
+
+      - name: Deploy to AKS
+        run: kubectl apply -f k8s/
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/demo-app --timeout=120s
+
+      - name: Get service IP
+        id: get-ip
+        run: |
+          for i in {1..20}; do
+            IP=$(kubectl get svc demo-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            if [ -n "$IP" ]; then
+              echo "ip=$IP" >> $GITHUB_OUTPUT
+              break
+            fi
+            sleep 10
+          done
+
+      - name: Set up Python for smoke tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Run smoke tests
+        run: python app/tests/smoke_test.py http://${{ steps.get-ip.outputs.ip }}

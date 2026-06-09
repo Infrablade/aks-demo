@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: demo-app
-          image: acraksdemocap.azurecr.io/demo-app:latest
+          image: acraksdemocap.azurecr.io/demo-app:${IMAGE_TAG}
           ports:
             - containerPort: 8080
           livenessProbe:

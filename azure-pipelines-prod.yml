@@ -1,0 +1,78 @@
+trigger: none
+
+variables:
+  acrName: acraksdemocap.azurecr.io
+  imageName: demo-app
+  aksName: aks-demo
+  resourceGroup: rg-aks-demo
+  imageTag: $(Build.SourceVersion)
+  namespace: prod
+
+stages:
+  # ── Deploy to Production ──────────────────────────────────────
+  - stage: DeployProd
+    displayName: Deploy to Production
+    jobs:
+      - deployment: DeployToAKSProd
+        displayName: Deploy to AKS (prod)
+        pool:
+          vmImage: ubuntu-latest
+        environment: prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: AzureCLI@2
+                  displayName: Get AKS credentials
+                  inputs:
+                    azureSubscription: "azure-service-connection"
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az aks get-credentials \
+                        --resource-group $(resourceGroup) \
+                        --name $(aksName)
+                      kubectl create namespace $(namespace) \
+                        --dry-run=client -o yaml | kubectl apply -f -
+
+                - script: |
+                    sed -i "s|\${IMAGE_TAG}|$(imageTag)|g" k8s/deployment.yaml
+                  displayName: Substitute image tag
+
+                - script: |
+                    kubectl apply -f k8s/ -n $(namespace)
+                  displayName: Apply manifests
+
+                - script: |
+                    kubectl rollout status deployment/demo-app \
+                      -n $(namespace) --timeout=120s
+                  displayName: Wait for rollout
+
+                - task: UsePythonVersion@0
+                  displayName: Set up Python
+                  inputs:
+                    versionSpec: "3.12"
+
+                - script: pip install requests --quiet
+                  displayName: Install requests
+
+                - script: |
+                    for i in {1..20}; do
+                      IP=$(kubectl get svc demo-app \
+                        -n $(namespace) \
+                        -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+                      if [ -n "$IP" ]; then
+                        echo "Service IP: $IP"
+                        break
+                      fi
+                      echo "Waiting for service IP... ($i/20)"
+                      sleep 10
+                    done
+                    if [ -z "$IP" ]; then
+                      echo "##[error]Service IP not available after 200s"
+                      exit 1
+                    fi
+                    python app/tests/smoke_test.py "http://$IP"
+                  displayName: Run smoke tests

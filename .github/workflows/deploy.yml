@@ -204,8 +204,9 @@ jobs:
             --name ${{ env.AKS_NAME }}
 
       - name: Update image tag
+        env:
+          IMAGE_TAG: ${{ needs.build-push.outputs.image_tag }}
         run: |
-          export IMAGE_TAG=${{ needs.build-push.outputs.image_tag }}
           envsubst < k8s/deployment.yaml > k8s/deployment-rendered.yaml
           mv k8s/deployment-rendered.yaml k8s/deployment.yaml
 
@@ -267,8 +268,9 @@ jobs:
             --name ${{ env.AKS_NAME }}
 
       - name: Update image tag
+        env:
+          IMAGE_TAG: ${{ needs.build-push.outputs.image_tag }}
         run: |
-          export IMAGE_TAG=${{ needs.build-push.outputs.image_tag }}
           envsubst < k8s/deployment.yaml > k8s/deployment-rendered.yaml
           mv k8s/deployment-rendered.yaml k8s/deployment.yaml
 

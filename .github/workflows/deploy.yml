@@ -122,8 +122,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -134,15 +132,11 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Generate image tag
-        id: meta
-        run: echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
-
       - name: Build & push to ACR
         run: |
           az acr build \
             --registry acraksdemocap \
-            --image ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }} \
+            --image ${{ env.IMAGE_NAME }}:${{ github.sha }} \
             --image ${{ env.IMAGE_NAME }}:latest \
             ./app
 
@@ -167,12 +161,12 @@ jobs:
       - name: Pull image for scanning
         run: |
           az acr login --name acraksdemocap
-          docker pull ${{ env.ACR_NAME }}/${{ env.IMAGE_NAME }}:${{ needs.build-push.outputs.image_tag }}
+          docker pull ${{ env.ACR_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Run Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ env.ACR_NAME }}/${{ env.IMAGE_NAME }}:${{ needs.build-push.outputs.image_tag }}"
+          image-ref: "${{ env.ACR_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
@@ -205,9 +199,8 @@ jobs:
 
       - name: Update image tag
         run: |
-          IMAGE_TAG="${{ needs.build-push.outputs.image_tag }}"
-          echo "Image tag is: $IMAGE_TAG"
-          sed -i "s|demo-app:\${IMAGE_TAG}|demo-app:${IMAGE_TAG}|g" k8s/deployment.yaml
+          echo "Image tag: ${{ github.sha }}"
+          sed -i "s|\${IMAGE_TAG}|${{ github.sha }}|g" k8s/deployment.yaml
 
       - name: Debug deployment.yaml
         run: cat k8s/deployment.yaml
@@ -268,9 +261,8 @@ jobs:
 
       - name: Update image tag
         run: |
-          IMAGE_TAG="${{ needs.build-push.outputs.image_tag }}"
-          echo "Image tag is: $IMAGE_TAG"
-          sed -i "s|demo-app:\${IMAGE_TAG}|demo-app:${IMAGE_TAG}|g" k8s/deployment.yaml
+          echo "Image tag: ${{ github.sha }}"
+          sed -i "s|\${IMAGE_TAG}|${{ github.sha }}|g" k8s/deployment.yaml
 
       - name: Debug deployment.yaml
         run: cat k8s/deployment.yaml

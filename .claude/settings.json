@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(terraform *)",
+      "Bash(kubectl *)",
+      "Bash(az *)",
+      "Bash(python *)",
+      "Bash(pip *)",
+      "Bash(docker *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(sed *)",
+      "Bash(echo *)",
+      "Bash(export *)",
+      "PowerShell(git *)",
+      "PowerShell(gh *)",
+      "PowerShell(terraform *)",
+      "PowerShell(kubectl *)",
+      "PowerShell(az *)"
+    ]
+  }
+}

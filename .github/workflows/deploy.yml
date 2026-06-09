@@ -209,6 +209,9 @@ jobs:
           envsubst < k8s/deployment.yaml > k8s/deployment-rendered.yaml
           mv k8s/deployment-rendered.yaml k8s/deployment.yaml
 
+      - name: Debug deployment.yaml
+        run: cat k8s/deployment.yaml
+
       - name: Deploy to AKS
         run: kubectl apply -f k8s/
 
@@ -268,6 +271,9 @@ jobs:
           export IMAGE_TAG=${{ needs.build-push.outputs.image_tag }}
           envsubst < k8s/deployment.yaml > k8s/deployment-rendered.yaml
           mv k8s/deployment-rendered.yaml k8s/deployment.yaml
+
+      - name: Debug deployment.yaml
+        run: cat k8s/deployment.yaml
 
       - name: Deploy to AKS
         run: kubectl apply -f k8s/

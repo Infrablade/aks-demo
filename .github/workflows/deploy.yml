@@ -204,11 +204,10 @@ jobs:
             --name ${{ env.AKS_NAME }}
 
       - name: Update image tag
-        env:
-          IMAGE_TAG: ${{ needs.build-push.outputs.image_tag }}
         run: |
-          envsubst < k8s/deployment.yaml > k8s/deployment-rendered.yaml
-          mv k8s/deployment-rendered.yaml k8s/deployment.yaml
+          IMAGE_TAG="${{ needs.build-push.outputs.image_tag }}"
+          echo "Image tag is: $IMAGE_TAG"
+          sed -i "s|demo-app:\${IMAGE_TAG}|demo-app:${IMAGE_TAG}|g" k8s/deployment.yaml
 
       - name: Debug deployment.yaml
         run: cat k8s/deployment.yaml
@@ -268,11 +267,10 @@ jobs:
             --name ${{ env.AKS_NAME }}
 
       - name: Update image tag
-        env:
-          IMAGE_TAG: ${{ needs.build-push.outputs.image_tag }}
         run: |
-          envsubst < k8s/deployment.yaml > k8s/deployment-rendered.yaml
-          mv k8s/deployment-rendered.yaml k8s/deployment.yaml
+          IMAGE_TAG="${{ needs.build-push.outputs.image_tag }}"
+          echo "Image tag is: $IMAGE_TAG"
+          sed -i "s|demo-app:\${IMAGE_TAG}|demo-app:${IMAGE_TAG}|g" k8s/deployment.yaml
 
       - name: Debug deployment.yaml
         run: cat k8s/deployment.yaml
